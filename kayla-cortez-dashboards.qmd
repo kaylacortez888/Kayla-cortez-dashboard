@@ -1,0 +1,261 @@
+---
+title: "W10-Dashboards Assignment"
+subtitle: "NCMA Dashboard and Shiny App"
+author: "Your Name"
+date: today
+
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-expand: true
+    embed-resources: true 
+    theme: cosmo 
+    code-fold: true
+
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+# Project 1:
+
+## Project description
+- This dashboard is dedicated in analyzing NCMA SGV website traffic and user engagement using GA4 data. This can help understand which channels generate highest session valume and which channels produces strong engagement.
+
+## Data description
+
+Variables that would be includes is 
+
+- Sessions
+- Users
+- Engagement Rate
+- Device Category 
+- Total engagement time
+
+Channels that we will be looking into includes Direct, Organic Search, Referral, and Other.
+
+## R Code.
+- You can add the code you had in an unexecutable chunk using the following chunk. Copy the code from the source mode of the qmd file. Make everything, including the YAML header.
+```r
+---
+
+title: "NCMA SGV Website Dashboard"
+author: "Kayla Cortez"
+
+format: 
+  dashboard:
+    theme: cosmo
+    
+execute:
+  echo: false
+  warning: false
+  message: false
+
+---
+```
+### Data 
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(arrow)
+library(scales)
+ncma_data <- open_dataset("ncma_data/parquet/channel_daily_kpis_v1")
+
+channel_data <- ncma_data |>
+  collect()
+
+total_sessions <- channel_data |>
+  summarise(
+    total_sessions = sum(sessions, na.rm = TRUE)
+  )
+
+total_sessions
+```
+
+```{r}
+
+sessions_by_channel <- channel_data |>
+  group_by(channel) |>
+  summarise(
+    sessions = sum(sessions, na.rm = TRUE)
+  )
+
+ggplot(sessions_by_channel,
+       aes(x = reorder(channel, sessions),
+           y = sessions, 
+           fill = channel)) + 
+geom_col() + 
+  coord_flip() + 
+  theme_minimal() + 
+  labs(
+    title = "Session by Traffic Channel",
+    x = "Traffic Channel",
+    y = "Sessions"
+  ) + scale_y_continuous(labels = comma)
+```
+
+
+```{r}
+engagement_by_channel <- channel_data |>
+  group_by(channel) |>
+  summarise(
+    engagement_rate = mean(engaged_sessions / sessions, na.rm = TRUE)
+  )
+
+ggplot(engagement_by_channel,
+       aes(x = reorder(channel, engagement_rate),
+           y = engagement_rate,
+           fill = channel)) + 
+  geom_col() + 
+  coord_flip() + 
+  theme_minimal() + 
+  labs(
+    title = "Engagement Rate by Traffic Channel",
+    x  = "Traffic Channel",
+    y = "Engagement Rate"
+  ) + scale_y_continuous(labels = percent)
+```
+## Findings from the data
+- Sessions by Traffic Channel shows that Direct traffic generates the highest session volume compared to organic search, referral and other.
+
+- Engagement Rate by Traffic Channel shows how Other and Referral channels actually have stronger engagement rate compared to Direct.
+
+This is important because it means we should not disregard channels with low traffic because it may have strnegths such as engagement.
+
+## Interpret the dashboard charts
+- The sessions by Traffic Charts show that there is strong traffic through Direct channel, however, Engagement Rate by Traffic shows that the referral, organic search, and other have stronger engagement. This can help with decided which attribution model should be used for example last click attribution will over credit direct and won't give proper credit to the other channels. Which is why multi-channel attribution should be considered.
+## Clickable URL of the published web page
+
+# Project 2:
+
+## Project description
+Looking into NCMA SGV device performance and sessions over time.
+## Data description
+
+Key Variables that was looked into:
+
+- event
+- sessions
+- device categroy
+- engaged sessions
+- engagement rate
+
+## R Code.
+- You can copy the code from your .R file (R Script) and paste it into an unexecutable chunk using the following chunk.
+```r
+
+library(shiny)
+library(tidyverse)
+library(plotly)
+library(arrow)
+library(rsconnect)
+
+
+ncma_data <- open_dataset("ncma_data/parquet/channel_daily_kpis_v1")
+
+channel_data <- ncma_data |>
+  collect() |>
+  mutate(
+    event_dt = as.Date(event_dt),
+    engagement_rate = engaged_sessions/ sessions
+  )
+
+ui <- fluidPage(
+  titlePanel("NCMA SGV Website Performance Shinny App"),
+  sidebarLayout(
+    sidebarPanel(
+      dateRangeInput(
+        "date_range",
+        "Select Date Range:",
+        start = min(channel_data$event_dt, na.rm = TRUE),
+        end = max(channel_data$event_dt, na.rm = TRUE)
+      ),
+      
+      selectInput(
+        "device",
+        "Select Device Category",
+        choices = c("ALL", sort(unique(channel_data$device_category))),
+        selected = "ALL"
+      )
+    ),
+    mainPanel(
+      plotlyOutput("sessions_time"),
+      plotlyOutput("device_perfromance")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  filtered_data <- reactive({
+    data <- channel_data |>
+      filter(
+        event_dt >= input$date_range[1],
+        event_dt <= input$date_range[2]
+      )
+    if(input$device != "ALL") {
+      data <- data |>
+        filter(device_category == input$device)
+    }
+    data
+  })
+  output$sessions_time <- renderPlotly({
+    sessions_time <- filtered_data() |>
+      group_by(event_dt) |>
+      summarise(
+        sessions = sum(sessions, na.rm = TRUE),
+        .groups = "drop"
+      )
+    p <- ggplot(sessions_time,
+                aes(x = event_dt,
+                    y = sessions)) +
+      geom_line() + 
+      theme_minimal() +
+      labs(
+        title = "Sessions Over Time",
+        x = "Date",
+        y = "Sessions"
+      )
+    ggplotly(p)
+  })
+  output$device_performance <- renderPlotly({
+    device_performance <- filtered_data() |>
+      group_by(device_category) |>
+      summarise(
+        sessions = sum(sessions, na.rm = TRUE),
+        engaged_sessions = sum(engaged_sessions, na.rm = TRUE),
+        engagement_rate = engaged_sessions/ sessions, 
+        .groups = "drop"
+      )
+    p <- ggplot(device_performance, 
+                aes(x = device_category,
+                    y = engagement_rate,
+                    fill = device_category)) +
+      geom_col() + 
+      theme_minimal() +
+      labs(
+        title = "Device Perfromance by Engagement Rate",
+        x = "Device Category",
+        y = "Engagement Rate"
+      )
+    ggplotly(p)
+  })
+}
+
+shinyApp(ui, server)
+```
+## Key Findings from the Data
+- Based on the charts it has produces, desktop generated highest session volume across the date range of February 17, 2026 to March 17, 2026
+- Mobile traffic is lower compared to desktop users using the same date range.
+- Tablet does not have any charts at the moment.
+- For both desktop and mobile has its peaks, but does not have similar results.
+
+## Interpret the dashboard charts
+
+The interactive dashboard allows any user that comes across it to change the date range and device type. By filtering it helps compare device performance to see how behavior is different across the devices. So far our website traffic is predominately by desktop users compared to mobile and tablet devices.
+
+## Interactive App
+## Clickable URL of the Shiny App
+  - https://kaylacortez.shinyapps.io/kayla-cortez-dashboard-app/
+  

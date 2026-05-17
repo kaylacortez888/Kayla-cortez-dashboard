@@ -1,0 +1,12 @@
+name: kayla-cortez-dashboard-app
+title: kayla-cortez-dashboard-app
+username: kaylacortez
+account: kaylacortez
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17372248
+bundleId: 12003223
+url: https://kaylacortez.shinyapps.io/kayla-cortez-dashboard-app/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
